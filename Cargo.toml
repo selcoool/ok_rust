@@ -1,0 +1,390 @@
+
+
+# CREATE TABLE users (
+
+#     id VARCHAR(36) PRIMARY KEY,
+
+#     name VARCHAR(255),
+
+#     email VARCHAR(255)
+# );
+
+# CREATE TABLE brands (
+
+#     id VARCHAR(36) PRIMARY KEY,
+
+#     name VARCHAR(255)
+# );
+
+# CREATE TABLE products (
+
+#     id VARCHAR(36) PRIMARY KEY,
+
+#     name VARCHAR(255),
+
+#     price DOUBLE,
+
+#     brand_id VARCHAR(36),
+
+#     FOREIGN KEY (brand_id)
+#     REFERENCES brands(id)
+# );
+
+
+
+
+
+
+# 1. Chạy server
+# cargo run
+
+# Nếu thành công:
+
+# SERVER RUNNING
+
+# Server chạy tại:
+
+# http://127.0.0.1:8080
+# 2. Mở Postman
+
+# Tạo request mới.
+
+# 3. Test Users
+# GET users
+# Method
+# GET
+# URL
+# http://127.0.0.1:8080/users
+# Bấm
+# Send
+# POST user
+# Method
+# POST
+# URL
+# http://127.0.0.1:8080/users
+# Body
+
+# Chọn:
+
+# Body
+
+# ↓
+
+# raw
+
+# ↓
+
+# JSON
+# JSON
+# {
+#   "name": "Tanh",
+#   "email": "tanh@gmail.com"
+# }
+# Result
+# {
+#   "id": "uuid...",
+#   "name": "Tanh",
+#   "email": "tanh@gmail.com"
+# }
+# 4. Test Brands
+# GET brands
+# GET http://127.0.0.1:8080/brands
+# POST brand
+# POST http://127.0.0.1:8080/brands
+# Body JSON
+# {
+#   "name": "Apple"
+# }
+# Result
+# {
+#   "id": "uuid...",
+#   "name": "Apple"
+# }
+# 5. Test Products
+# GET products
+# GET http://127.0.0.1:8080/products
+# POST product
+# POST http://127.0.0.1:8080/products
+# Body JSON
+# {
+#   "name": "iPhone 16",
+#   "price": 999,
+#   "brand_id": "PASTE_BRAND_ID"
+# }
+# Lấy brand_id ở đâu?
+
+# Từ:
+
+# GET /brands
+
+# Ví dụ:
+
+# [
+#   {
+#     "id": "123-abc",
+#     "name": "Apple"
+#   }
+# ]
+
+
+
+
+
+# MIDDLEWARE
+
+
+# Structure
+# src/
+# │
+# ├── middleware.rs
+# │
+# └── middleware/
+#     └── api_key_middleware.rs
+# src/middleware.rs
+# pub mod api_key_middleware;
+# src/middleware/api_key_middleware.rs
+# use actix_web::{
+#     dev::{
+#         Service,
+#         ServiceRequest,
+#         ServiceResponse,
+#         Transform,
+#     },
+#     Error,
+#     HttpResponse,
+# };
+
+# use futures_util::future::{
+#     ok,
+#     LocalBoxFuture,
+#     Ready,
+# };
+
+# use std::rc::Rc;
+
+# pub struct ApiKeyMiddleware;
+
+# impl<S, B> Transform<S, ServiceRequest>
+# for ApiKeyMiddleware
+# where
+#     S: Service<
+#         ServiceRequest,
+#         Response = ServiceResponse<B>,
+#         Error = Error,
+#     > + 'static,
+
+#     B: 'static,
+# {
+#     type Response = ServiceResponse<B>;
+
+#     type Error = Error;
+
+#     type InitError = ();
+
+#     type Transform = ApiKeyMiddlewareService<S>;
+
+#     type Future = Ready<
+#         Result<Self::Transform, Self::InitError>
+#     >;
+
+#     fn new_transform(
+#         &self,
+#         service: S,
+#     ) -> Self::Future {
+
+#         ok(ApiKeyMiddlewareService {
+#             service: Rc::new(service),
+#         })
+#     }
+# }
+
+# pub struct ApiKeyMiddlewareService<S> {
+
+#     service: Rc<S>,
+# }
+
+# impl<S, B> Service<ServiceRequest>
+# for ApiKeyMiddlewareService<S>
+# where
+#     S: Service<
+#         ServiceRequest,
+#         Response = ServiceResponse<B>,
+#         Error = Error,
+#     > + 'static,
+
+#     B: 'static,
+# {
+#     type Response = ServiceResponse<B>;
+
+#     type Error = Error;
+
+#     type Future = LocalBoxFuture<
+#         'static,
+#         Result<Self::Response, Self::Error>,
+#     >;
+
+#     fn poll_ready(
+#         &self,
+#         ctx: &mut std::task::Context<'_>,
+#     ) -> std::task::Poll<
+#         Result<(), Self::Error>
+#     > {
+
+#         self.service.poll_ready(ctx)
+#     }
+
+#     fn call(
+#         &self,
+#         req: ServiceRequest,
+#     ) -> Self::Future {
+
+#         let service = self.service.clone();
+
+#         Box::pin(async move {
+
+#             let api_key = req
+#                 .headers()
+#                 .get("x-api-key");
+
+#             match api_key {
+
+#                 Some(value) => {
+
+#                     if value == "123456" {
+
+#                         service.call(req).await
+
+#                     } else {
+
+#                         Err(
+#                             actix_web::error::ErrorUnauthorized(
+#                                 "Invalid API KEY"
+#                             )
+#                         )
+#                     }
+#                 }
+
+#                 None => {
+
+#                     Err(
+#                         actix_web::error::ErrorUnauthorized(
+#                             "Missing API KEY"
+#                         )
+#                     )
+#                 }
+#             }
+#         })
+#     }
+# }
+# Thêm dependency
+# Cargo.toml
+# futures-util = "0.3"
+# main.rs
+# mod middleware;
+# import middleware
+# use middleware
+#     ::api_key_middleware
+#     ::ApiKeyMiddleware;
+# apply middleware
+# HttpServer::new(move || {
+
+#     App::new()
+
+#         .wrap(ApiKeyMiddleware)
+
+#         .wrap(Cors::permissive())
+
+#         .app_data(
+#             web::Data::new(pool.clone())
+#         )
+
+#         .configure(user_routes)
+
+#         .configure(product_routes)
+
+#         .configure(brand_routes)
+# })
+# Test Postman
+# Không có header
+# 401 Unauthorized
+# Có header
+# Headers
+# KEY	VALUE
+# x-api-key	123456
+# Result
+
+# API hoạt động bình thường.
+
+# Middleware chỉ cho riêng route
+
+# Ví dụ chỉ protect products:
+
+# use actix_web::web;
+
+# use crate::middleware
+#     ::api_key_middleware
+#     ::ApiKeyMiddleware;
+
+# pub fn product_routes(
+#     cfg: &mut web::ServiceConfig,
+# ) {
+
+#     cfg.service(
+
+#         web::scope("/products")
+
+#             .wrap(ApiKeyMiddleware)
+
+#             .route(
+#                 "",
+#                 web::get().to(get_products)
+#             )
+
+#             .route(
+#                 "",
+#                 web::post().to(create_product)
+#             )
+#     );
+# }
+# Middleware JWT sau này
+
+# Flow thực tế:
+
+# request
+#    ↓
+# middleware
+#    ↓
+# verify token
+#    ↓
+# next handler
+
+
+
+[package]
+name = "rust_store_api"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+
+actix-web = "4"
+
+actix-cors = "0.7"
+
+tokio = { version = "1", features = ["full"] }
+
+serde = { version = "1", features = ["derive"] }
+
+serde_json = "1"
+
+dotenvy = "0.15"
+
+uuid = { version = "1", features = ["v4", "serde"] }
+
+sqlx = { version = "0.8", features = [
+    "runtime-tokio-rustls",
+    "mysql",
+    "macros",
+    "uuid",
+    "chrono"
+] }
